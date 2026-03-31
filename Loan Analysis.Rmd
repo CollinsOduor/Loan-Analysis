@@ -1,0 +1,51 @@
+---
+title: "Loan Analysis"
+author: "Collins Oduor"
+date: "2026-03-31"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+required_libraries <- c("dplyr", "tidyverse", "corrr", "corrplot", "MASS")
+
+for (required_library in required_libraries) {
+  if(!(required_library %in% installed.packages())) {
+    install.packages(required_library)
+  }
+  
+  library(required_library, character.only = T)
+}
+```
+
+
+```{r}
+df <- read_csv(file="~/Downloads/loan_data.csv")
+```
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_income, color = person_education))
+```
+```{r}
+ggplot(df) + 
+  geom_point(mapping = aes(x = person_income, y = loan_amnt))
+```
+```{r}
+ggplot(df) + 
+  geom_point(mapping = aes(x = log(person_income), y = log(loan_amnt)), alpha = 0.3, color = "skyblue") +
+  geom_smooth(mapping = aes(x = log(person_income), y = log(loan_amnt)))
+```
+
+```{r}
+ggplot(df) + 
+  geom_point(mapping = aes(x = log(person_income), y = log(loan_amnt), color = loan_intent), alpha = 0.3)
+```
+
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = log(person_income)), bins = 100) +
+  labs(title = "Distribution of log of person income")
+```
