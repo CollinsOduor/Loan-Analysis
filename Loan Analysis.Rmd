@@ -5,9 +5,13 @@ date: "2026-03-31"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Configuration
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE) # Ensure the code blocks are shown when the markdown is knitted to the target format
 ```
+
+# Imports
 
 ```{r}
 required_libraries <- c("dplyr", "tidyverse", "corrr", "corrplot", "MASS")
@@ -21,31 +25,148 @@ for (required_library in required_libraries) {
 }
 ```
 
+# Loading data
 
 ```{r}
-df <- read_csv(file="~/Downloads/loan_data.csv")
+df <- read_csv(file="loan_data.csv")
 ```
+
+# Exploratory Analysis
+## Summary of data
+
 ```{r}
-ggplot(df) + 
-  geom_boxplot(mapping = aes(x = person_income, color = person_education))
-```
-```{r}
-ggplot(df) + 
-  geom_point(mapping = aes(x = person_income, y = loan_amnt))
-```
-```{r}
-ggplot(df) + 
-  geom_point(mapping = aes(x = log(person_income), y = log(loan_amnt)), alpha = 0.3, color = "skyblue") +
-  geom_smooth(mapping = aes(x = log(person_income), y = log(loan_amnt)))
+dim(df)
 ```
 
 ```{r}
+head(df)
+```
+
+```{r}
+names(df)
+```
+
+```{r}
+sapply(df, anyNA)
+```
+## Univariate Analysis
+
+### Home ownership
+
+```{r}
+df |>
+  group_by(person_home_ownership) |>
+  mutate(freq = n()) |>
+  ggplot() + 
+  geom_bar(mapping=aes(x=reorder(person_home_ownership, desc(freq)))) +
+  labs(title = "Home ownership modes for loan takers", x = "Home ownership mode")
+```
+
+### Loan intent
+
+```{r}
+df |>
+  group_by(loan_intent) |>
+  mutate(freq = n()) |>
+  ggplot() +
+    geom_bar(mapping = aes(x = reorder(loan_intent, desc(freq)))) + 
+    labs(title = "Number of loans by intent" ,x = "Loan intent") +
+    scale_x_discrete(guide = guide_axis(angle=60))
+```
+
+### Education level
+```{r}
+df |>
+  group_by(person_education) |>
+  mutate(freq = n()) |>
+  ggplot() + 
+    geom_bar(mapping = aes(x= reorder(person_education, desc(freq)))) +
+    labs(title = "Education level for loan takers", x = "Education level")
+```
+
+### Gender
+
+```{r}
+df |>
+  group_by(person_gender) |>
+  mutate(freq = n()) |>
+  ggplot() + 
+    geom_bar(mapping = aes(x = reorder(person_gender, desc(freq)))) +
+  labs(title = "Gender of loan takers", x = "Gender")
+```
+### Income
+
+```{r}
 ggplot(df) + 
-  geom_point(mapping = aes(x = log(person_income), y = log(loan_amnt), color = loan_intent), alpha = 0.3)
+  geom_histogram(mapping = aes(x = person_income), bins = 100) +
+  labs(title = "Distribution of log of person income")
 ```
 
 ```{r}
 ggplot(df) + 
   geom_histogram(mapping = aes(x = log(person_income)), bins = 100) +
   labs(title = "Distribution of log of person income")
+```
+
+## Bivariate Analysis
+
+### Income based on education
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_income, color = person_education)) + 
+  labs(title = "Distribution of income based on education level", x = "Income")
+```
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_income, color = person_education), outliers=F, notch=T) +
+  labs(title = "Distribution of income based on education level", x = "Income")
+```
+### Income based on gender
+```{r}
+ggplot(data = df) +
+  geom_boxplot(mapping = aes(x = person_income, color = person_gender), outliers=F, notch=T) +
+  labs(title = "Distribution of income based on gender", x = "Income")
+```
+
+### Loan amount based on income
+
+```{r}
+ggplot(df) + 
+  geom_point(mapping = aes(x = person_income, y = loan_amnt), color="skyblue") +
+  labs(title = "Loan amount based on income", x = "Income", y = "Loan Amount")
+```
+
+#### With log transformation on income
+
+```{r}
+ggplot(df) + 
+  geom_point(mapping = aes(x = log(person_income), y = loan_amnt, color = person_gender), alpha = 0.2) +
+  geom_smooth(mapping = aes(x = log(person_income), y = loan_amnt, color = person_gender), se = F) + 
+  labs(title = "Loan amount vs log of income grouped by gender", x = "Log of income", y = "Loan amount")
+```
+
+#### With log transformation on both income and loan amount
+
+```{r}
+ggplot(data=df, mapping= aes(x=log(person_income), y=log(loan_amnt), color=loan_intent)) + 
+  geom_point(alpha = 0.2) +
+  geom_smooth(se = F) +
+  labs(title = "Log of loan amount vs log of income grouped by loan intent", x = "log of income", y = "Log of loan amount")
+```
+
+# Modelling
+
+## Linear Model using step-wise feature selection
+
+```{r}
+lm_min <- lm(person_income ~ 1, data = df)
+lm_max <- lm(person_income ~ ., data = df)
+```
+
+```{r}
+step(lm_min, scope = list(upper = lm_max), direction = "forward")
+```
+
+```{r}
+step(lm_max, scope = list(lower = lm_min), direction = "backward")
 ```
