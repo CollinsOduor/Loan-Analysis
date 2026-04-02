@@ -5,12 +5,6 @@ date: "2026-03-31"
 output: pdf_document
 ---
 
-# Configuration
-
-```{r setup, include=TRUE}
-knitr::opts_chunk$set(echo = TRUE) # Ensure the code blocks are shown when the markdown is knitted to the target format
-```
-
 # Imports
 
 ```{r}
@@ -23,6 +17,16 @@ for (required_library in required_libraries) {
   
   library(required_library, character.only = T)
 }
+```
+
+# Configuration
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE) # Ensure code blocks 
+#are shown when the markdown is knitted to the target format
+theme_update(plot.title = element_text(hjust = 0.5))
+theme_update(plot.background = element_blank())
+theme_update(panel.background = element_blank())
 ```
 
 # Loading data
@@ -59,8 +63,11 @@ df |>
   mutate(freq = n()) |>
   ggplot() + 
   geom_bar(mapping=aes(x=reorder(person_home_ownership, desc(freq)))) +
-  labs(title = "Home ownership modes for loan takers", x = "Home ownership mode")
+  labs(title = "Number of loan takers grouped by home ownership", x = "Home ownership mode", y = "Number of loan takers") +
+  scale_y_continuous(limits = c(0, 25000)) +
+  theme(panel.grid.major.y = element_line(color = "grey"))
 ```
+Significantly fewer loans were taken by people who either own their homes or have a different ownership mode other than renting or mortgage. This could highlight the fact that having consistent monthly payments could squeeze one's budget to the extent that they are left with no means other than to take out a loan.
 
 ### Loan intent
 
@@ -70,9 +77,12 @@ df |>
   mutate(freq = n()) |>
   ggplot() +
     geom_bar(mapping = aes(x = reorder(loan_intent, desc(freq)))) + 
-    labs(title = "Number of loans by intent" ,x = "Loan intent") +
-    scale_x_discrete(guide = guide_axis(angle=60))
+    labs(title = "Number of loans by intent", x = "Loan intent") +
+    scale_x_discrete(guide = guide_axis(angle=60)) +
+    scale_y_continuous(name = "Number of applications", limits=c(0, 10000)) +
+    theme(panel.grid.major.y = element_line(color = "grey"))
 ```
+Fewer loans were taken for the purposes of home improvement than any other intent. Education and medical reasons were the most-cited reasons by loan takers.
 
 ### Education level
 ```{r}
@@ -81,8 +91,11 @@ df |>
   mutate(freq = n()) |>
   ggplot() + 
     geom_bar(mapping = aes(x= reorder(person_education, desc(freq)))) +
-    labs(title = "Education level for loan takers", x = "Education level")
+    labs(title = "Number of loan takers by education level", x = "Education level", y = "Number of loan takers") +
+  scale_y_continuous(limits=c(0, 15000)) +
+  theme(panel.grid.major.y = element_line("grey"))
 ```
+Fewer loans were taken by people who hold at least a Master's degree. Interestingly, holders of Bachelor's degree took more loans than people who did not take their studies beyond high school.
 
 ### Gender
 
@@ -92,20 +105,58 @@ df |>
   mutate(freq = n()) |>
   ggplot() + 
     geom_bar(mapping = aes(x = reorder(person_gender, desc(freq)))) +
-  labs(title = "Gender of loan takers", x = "Gender")
+  labs(title = "Number of loan takers by gender", x = "Gender", y = "Number of loa takers") + 
+  theme(panel.grid.major.y = element_line("grey"))
 ```
+There were about 5,000 more male loan takers than females.
+
 ### Income
 
 ```{r}
 ggplot(df) + 
-  geom_histogram(mapping = aes(x = person_income), bins = 100) +
-  labs(title = "Distribution of log of person income")
+  geom_boxplot(mapping = aes(x = person_income)) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of income", x = "Income") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 ```
+The distribution of income is skewed to the right.
+
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_income), outliers=F) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of income (excluding outliers)", x = "Income") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+```
+Excluding outliers, it is clearer that the median income is about 70,000, and that 50% of the loan takers have an income of between (about) 50,000 and (about) 100,000. 
 
 ```{r}
 ggplot(df) + 
   geom_histogram(mapping = aes(x = log(person_income)), bins = 100) +
-  labs(title = "Distribution of log of person income")
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_line("grey")) +
+  scale_y_continuous(limits = c(0, 3000)) +
+  geom_vline(mapping = aes(xintercept = median(log(df$person_income)))) +
+  annotate("text", x = median(log(df$person_income))+0.7, y = 2945 , label = paste0("Median: ", format(round(median(log(df$person_income)), 2), nsmall = 2))) +
+  labs(title = "Distribution of log of income", x = "Log of income")
+```
+Log transformation was done on the income to narrow the range of possible values. The distribution of log of income follows a normal distribution
+
+### Age
+
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = person_age), binwidth = 2.5, boundary=0) +
+  labs(title = "Distribution of age", x="Age") +
+  theme(panel.grid.major.y = element_line("grey"))
+```
+### Loan amount
+
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = loan_amnt), boundary=0) +
+  labs(title = "Distribution of loan amount", x="Loan Amount")
 ```
 
 ## Bivariate Analysis
@@ -119,13 +170,33 @@ ggplot(df) +
 ```{r}
 ggplot(df) + 
   geom_boxplot(mapping = aes(x = person_income, color = person_education), outliers=F, notch=T) +
-  labs(title = "Distribution of income based on education level", x = "Income")
+  theme(axis.ticks.y = element_blank(), axis.text.y = element_blank()) +
+  labs(title = "Doctorate degree holders have a higher median income than others", x = "Income")
 ```
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = person_income, fill = person_education)) +
+  theme(axis.ticks.y = element_blank(), axis.text.y = element_blank()) +
+  facet_grid(person_education ~ .) +
+  scale_x_continuous(limits=c(0, 1.5e+05)) +
+  labs(title = "Doctorate degree holders have a higher median income than others", x = "Income")
+```
+
 ### Income based on gender
 ```{r}
 ggplot(data = df) +
   geom_boxplot(mapping = aes(x = person_income, color = person_gender), outliers=F, notch=T) +
   labs(title = "Distribution of income based on gender", x = "Income")
+```
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = person_income, fill = person_gender), bins = 30) +
+  xlim(0, 1.5e+05) +
+  facet_grid(person_gender ~ .) +
+  theme(legend.position = "none") +
+  theme(panel.grid.major.y = element_line("grey")) +
+  scale_y_continuous(limits = c(0, 2000)) +
+  labs(title = "The distributions of income both genders greatly overlap", x = "Income", y = "Number of people at income level")
 ```
 
 ### Loan amount based on income
@@ -133,7 +204,15 @@ ggplot(data = df) +
 ```{r}
 ggplot(df) + 
   geom_point(mapping = aes(x = person_income, y = loan_amnt), color="skyblue") +
-  labs(title = "Loan amount based on income", x = "Income", y = "Loan Amount")
+  labs(title = "Loan amount based on income", x = "Income", y = "Loan Amount") +
+  annotate("text", label = "Elites", x=6e+06, y = 5000)
+```
+
+```{r}
+ggplot(df) + 
+  geom_point(mapping = aes(x = person_income, y = loan_amnt), color="skyblue") +
+  labs(title = "Loan amount based on income", x = "Income", y = "Loan Amount") +
+  xlim(0, 1.5e+05)
 ```
 
 #### With log transformation on income
