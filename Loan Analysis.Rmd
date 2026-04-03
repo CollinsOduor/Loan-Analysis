@@ -22,10 +22,16 @@ for (required_library in required_libraries) {
 # Configuration
 
 ```{r setup, include=TRUE}
-knitr::opts_chunk$set(echo = TRUE) # Ensure code blocks 
-#are shown when the markdown is knitted to the target format
+# Ensure code blocks are shown on knitting to the target
+knitr::opts_chunk$set(echo = TRUE)
+
+# Centre all plot titles
 theme_update(plot.title = element_text(hjust = 0.5))
+
+# Remove plot background
 theme_update(plot.background = element_blank())
+
+# Remove panel background
 theme_update(panel.background = element_blank())
 ```
 
@@ -41,6 +47,7 @@ df <- read_csv(file="loan_data.csv")
 ```{r}
 dim(df)
 ```
+The data contains 45000 rows and 14 columns.
 
 ```{r}
 head(df)
@@ -53,6 +60,8 @@ names(df)
 ```{r}
 sapply(df, anyNA)
 ```
+All columns are 100% complete; no column has even a single null value.
+
 ## Univariate Analysis
 
 ### Home ownership
@@ -63,9 +72,12 @@ df |>
   mutate(freq = n()) |>
   ggplot() + 
   geom_bar(mapping=aes(x=reorder(person_home_ownership, desc(freq)))) +
-  labs(title = "Number of loan takers grouped by home ownership", x = "Home ownership mode", y = "Number of loan takers") +
+  labs(title = "Number of loan takers grouped by home ownership",
+       x = "Home ownership mode",
+       y = "Number of loan takers") +
   scale_y_continuous(limits = c(0, 25000)) +
-  theme(panel.grid.major.y = element_line(color = "grey"))
+  theme(panel.grid.major.y = element_line(color = "grey"),
+        axis.ticks.y = element_blank())
 ```
 Significantly fewer loans were taken by people who either own their homes or have a different ownership mode other than renting or mortgage. This could highlight the fact that having consistent monthly payments could squeeze one's budget to the extent that they are left with no means other than to take out a loan.
 
@@ -80,20 +92,25 @@ df |>
     labs(title = "Number of loans by intent", x = "Loan intent") +
     scale_x_discrete(guide = guide_axis(angle=60)) +
     scale_y_continuous(name = "Number of applications", limits=c(0, 10000)) +
-    theme(panel.grid.major.y = element_line(color = "grey"))
+    theme(panel.grid.major.y = element_line(color = "grey"),
+          axis.ticks.y = element_blank())
 ```
 Fewer loans were taken for the purposes of home improvement than any other intent. Education and medical reasons were the most-cited reasons by loan takers.
 
 ### Education level
+
 ```{r}
 df |>
   group_by(person_education) |>
   mutate(freq = n()) |>
   ggplot() + 
     geom_bar(mapping = aes(x= reorder(person_education, desc(freq)))) +
-    labs(title = "Number of loan takers by education level", x = "Education level", y = "Number of loan takers") +
+    labs(title = "Number of loan takers by education level",
+         x = "Education level",
+         y = "Number of loan takers") +
   scale_y_continuous(limits=c(0, 15000)) +
-  theme(panel.grid.major.y = element_line("grey"))
+  theme(panel.grid.major.y = element_line("grey"),
+        axis.ticks.y = element_blank())
 ```
 Fewer loans were taken by people who hold at least a Master's degree. Interestingly, holders of Bachelor's degree took more loans than people who did not take their studies beyond high school.
 
@@ -102,13 +119,32 @@ Fewer loans were taken by people who hold at least a Master's degree. Interestin
 ```{r}
 df |>
   group_by(person_gender) |>
+  summarise(freq = n(), .groups = "drop") |>
+  ggplot(mapping = aes(x = "", y = freq, fill = person_gender)) + 
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    labs(title = "Composition of loan takers by gender") +
+    theme_void() +
+    geom_text(aes(label = person_gender),
+              position = position_stack(vjust = 0.5)) +
+    theme(legend.position = "none") +
+    scale_fill_brewer(palette = "RdYlGn")
+```
+
+```{r}
+df |>
+  group_by(person_gender) |>
   mutate(freq = n()) |>
   ggplot() + 
-    geom_bar(mapping = aes(x = reorder(person_gender, desc(freq)))) +
-  labs(title = "Number of loan takers by gender", x = "Gender", y = "Number of loa takers") + 
-  theme(panel.grid.major.y = element_line("grey"))
+    geom_bar(mapping = aes(x = reorder(person_gender, 
+                                       desc(freq)))) +
+  labs(title = "Number of loan takers by gender",
+       x = "Gender",
+       y = "Number of loan takers") + 
+  theme(panel.grid.major.y = element_line("grey"),
+        axis.ticks.y = element_blank())
 ```
-There were about 5,000 more male loan takers than females.
+There were marginally more male than female loan takers - about 5,000 more.
 
 ### Income
 
@@ -117,15 +153,17 @@ ggplot(df) +
   geom_boxplot(mapping = aes(x = person_income)) +
   theme(legend.position = "none") +
   labs(title = "Distribution of income", x = "Income") +
-  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 ```
-The distribution of income is skewed to the right.
+The distribution of income is skewed to the right. There are high earners who change the mean of the distribution.
 
 ```{r}
 ggplot(df) + 
   geom_boxplot(mapping = aes(x = person_income), outliers=F) +
   theme(legend.position = "none") +
-  labs(title = "Distribution of income (excluding outliers)", x = "Income") +
+  labs(title = "Distribution of income (excluding outliers)",
+       x = "Income") +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 ```
 Excluding outliers, it is clearer that the median income is about 70,000, and that 50% of the loan takers have an income of between (about) 50,000 and (about) 100,000. 
@@ -138,26 +176,201 @@ ggplot(df) +
     panel.grid.major.y = element_line("grey")) +
   scale_y_continuous(limits = c(0, 3000)) +
   geom_vline(mapping = aes(xintercept = median(log(df$person_income)))) +
-  annotate("text", x = median(log(df$person_income))+0.7, y = 2945 , label = paste0("Median: ", format(round(median(log(df$person_income)), 2), nsmall = 2))) +
-  labs(title = "Distribution of log of income", x = "Log of income")
+  annotate("text",
+           x = median(log(df$person_income))+0.7,
+           y = 2945 ,
+           label = paste0("Median: ",
+                          format(round(
+                            median(log(df$person_income)),
+                            2),
+                            nsmall = 2))) +
+  labs(title = "Distribution of log of income",
+       x = "Log of income") +
+  theme(axis.ticks.y = element_blank(),
+        axis.title.y = element_blank())
 ```
-Log transformation was done on the income to narrow the range of possible values. The distribution of log of income follows a normal distribution
+Log transformation was done on the income to narrow the range of possible values. The distribution of log of income now follows a fairly normal distribution.
 
 ### Age
 
 ```{r}
 ggplot(df) + 
-  geom_histogram(mapping = aes(x = person_age), binwidth = 2.5, boundary=0) +
+  geom_histogram(mapping = aes(x = person_age), bins = 50, boundary=0) +
   labs(title = "Distribution of age", x="Age") +
-  theme(panel.grid.major.y = element_line("grey"))
+  theme(panel.grid.major.y = element_line("grey"),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
 ```
+The age of loan takers is skewed to the right.
+
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_age), outliers=F) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of age (excluding outliers)",
+       x = "Age") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+```
+As highlighted from the previous histogram, age is skewed to the right. Most of the loan takers have ages between 20 and just under 40. 
+
+```{r}
+nrow(subset(df, person_age > 40)) / nrow(df)
+```
+
+In fact, only 4% of the loan takers are above 40 years of age.
+
 ### Loan amount
 
 ```{r}
 ggplot(df) + 
-  geom_histogram(mapping = aes(x = loan_amnt), boundary=0) +
-  labs(title = "Distribution of loan amount", x="Loan Amount")
+  geom_histogram(mapping = aes(x = loan_amnt), bins = 20) +
+  labs(title = "Distribution of loan amount", x="Loan Amount") +
+  theme(panel.grid.major.y = element_line("grey"),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()) +
+  geom_vline(mapping = aes(xintercept = median(df$loan_amnt))) +
+  annotate("text",
+           x = median(df$loan_amnt) + 3700,
+           y = 7800,
+           label = paste0("Median: ", median(df$loan_amnt)))
 ```
+The distribution of loan amount is skewed to the right, with a median of 8000.
+
+
+### Employment experience
+
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = person_emp_exp)) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of employment experience",
+       x = "Employment experience in years") +
+  theme(axis.ticks.y = element_blank(),
+        panel.grid.major.y = element_line("grey"),
+        axis.title.y = element_blank()) +
+  scale_y_continuous(limits = c(0, 20000)) +
+  geom_vline(mapping = aes(xintercept = median(df$person_emp_exp))) +
+  annotate("text",
+           x = median(df$person_emp_exp) + 10,
+           y = 19500,
+           label = paste0("Median: ", median(df$person_emp_exp)))
+```
+Employment experience is skewed to the right, with a median of 4.
+
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_emp_exp), outliers=F) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of employment experience (excluding outliers)",
+       x = "Employment experience in years") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+```
+Most loan takers had employment experience of somewhere between 0 and just under 20 years.
+
+```{r}
+nrow(subset(df, person_emp_exp > 20)) / nrow(df)
+```
+Only 2% of loan takers had over 20 years of experience.
+
+### Loan interest rate
+
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = loan_int_rate), bins = 20) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of loan interest rate",
+       x = "Interest rate in percentage") +
+  theme(axis.ticks.y = element_blank(),
+        panel.grid.major.y = element_line("grey"),
+        axis.title.y = element_blank()) +
+  scale_y_continuous(limits = c(0, 10000)) +
+  geom_vline(mapping = aes(xintercept = median(df$loan_int_rate))) +
+  annotate("text",
+           x = median(df$loan_int_rate) + 1.5,
+           y = 9500,
+           label = paste0("Median: ", median(df$loan_int_rate)))
+```
+The distribution of interest rates follows a fairly normal distribution, with a median of about 11%.
+
+
+### Loan percent income
+
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = loan_percent_income)) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of loan income",
+       x = "Loan income in percentage") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+```
+Most loans yielded an income of between 0% to 0.4%. There were a few outliers that yielded a profit of over 0.4%.
+
+### Previous loan default
+
+```{r}
+df |>
+  group_by(previous_loan_defaults_on_file) |>
+  summarise(freq = n(), .groups = "drop") |>
+  ggplot(mapping = aes(x = "", y = freq,
+                       fill = previous_loan_defaults_on_file)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  geom_text(mapping = aes(label = previous_loan_defaults_on_file),
+            position = position_stack(vjust = 0.5)) +
+  theme(legend.position = "none") +
+  ggtitle(label = "Previous default rates",
+          subtitle = "As many people have defaulted previously as have not")
+```
+Previous default rate for loan takers is about 50% - as many applicants have previously defaulted as have not defaulted.
+
+
+### Credit score
+
+```{r}
+ggplot(df) +
+  geom_histogram(mapping = aes(x = credit_score), bins = 50) +
+  theme(axis.title.y = element_blank(),
+        panel.grid.major.y = element_line("grey"),
+        axis.ticks.y = element_blank()) + 
+  scale_y_continuous(limits = c(0, 4000)) +
+  labs(title = "Distribution of credit score", x = "Credit score")
+```
+
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = credit_score)) +
+  theme(legend.position = "none") +
+  labs(title = "Distribution of credit score",
+       x = "Credit score") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+```
+
+The distribution credit score appears to be slightly skewed to the left, with most loan takers having scores between 500 and 800. Outliers were observed at both tails of the distribution (with more outliers towards the left tail).
+
+### Loan status
+
+```{r}
+df |>
+  group_by(loan_status) |>
+  summarise(freq = n(), .groups = "drop") |>
+  ggplot(mapping = aes(x="", y = freq, fill = as.factor(loan_status))) +
+  geom_bar(stat = "identity", width = 1) + 
+  coord_polar("y", start = 0) + 
+  theme_void() +
+  geom_text(mapping = aes(label = ifelse(loan_status,
+                                         "Repaid",
+                                         "Defaulted")),
+            position = position_stack(vjust = 0.5)) +
+  theme(legend.position = "none") +
+  ggtitle("Analysis of loan perfomance",
+          subtitle = "More than 75% of loans were defaulted")
+```
+Most of the loans (>75%) did not perform in the sense that they were eventually defaulted.
 
 ## Bivariate Analysis
 
@@ -165,7 +378,8 @@ ggplot(df) +
 ```{r}
 ggplot(df) + 
   geom_boxplot(mapping = aes(x = person_income, color = person_education)) + 
-  labs(title = "Distribution of income based on education level", x = "Income")
+  labs(title = "Distribution of income based on education level", x = "Income") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 ```
 ```{r}
 ggplot(df) + 
@@ -186,7 +400,8 @@ ggplot(df) +
 ```{r}
 ggplot(data = df) +
   geom_boxplot(mapping = aes(x = person_income, color = person_gender), outliers=F, notch=T) +
-  labs(title = "Distribution of income based on gender", x = "Income")
+  labs(title = "Distribution of income based on gender", x = "Income") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 ```
 ```{r}
 ggplot(df) + 
