@@ -382,9 +382,7 @@ Most of the loans (>75%) did not perform in the sense that they were eventually 
 
 ## Bivariate Analysis
 
-### Income
-
-#### Based on education
+### Income based on education
 
 ```{r}
 ggplot(df) + 
@@ -411,7 +409,7 @@ ggplot(df) +
 ```
 Ignoring outliers, it becomes clear that the distribution of income for Doctorate degree holders has a rightward shift relative to people at other education levels. The notch of the boxplot not overlapping with other boxplots indicates that the median is significantly different.
 
-#### Based on gender
+### Income based on gender
 
 ```{r}
 ggplot(df) + 
@@ -427,7 +425,7 @@ ggplot(df) +
 ```
 The distribution of income by gender shows an almost-perfect overlap, indicating that there is no difference in income based on gender.
 
-#### Based on home ownership
+### Income based on home ownership
 
 ```{r}
 ggplot(df) + 
@@ -443,7 +441,7 @@ ggplot(df) +
 ```
 The distributions of income for people who pay neither rent nor mortgage is essentially non-existent on the scale. This is due to how few loans were taken by those who do not have home payments.
 
-#### Based on years of experience
+### Income based on years of experience
 
 ```{r}
 ggplot(data = df) +
@@ -458,9 +456,7 @@ ggplot(data = df) +
 ```
 There does not appear to be any relationship between the income and experience, even accounting for level of education.
 
-### Loan amount
-
-#### Based on income
+### Loan amount based on income
 
 ```{r}
 ggplot(df) + 
@@ -478,7 +474,7 @@ ggplot(df) +
 ```
 Accounting for outliers in income, there does not appear to be any relationship between loan amount and income.
 
-##### With log transformation on income
+#### With log transformation on income
 
 ```{r}
 ggplot(df) + 
@@ -495,7 +491,7 @@ ggplot(df) +
        y = "Loan amount")
 ```
 
-##### With log transformation on both income and loan amount
+#### With log transformation on both income and loan amount
 
 ```{r}
 ggplot(data=df, mapping= aes(x=log(person_income),
@@ -510,9 +506,7 @@ ggplot(data=df, mapping= aes(x=log(person_income),
  Transforming the loan amount and income variables using log did not increase the level of relationship between the 2 variables.
  
  
-### Loan interest rate
-
-#### Based on loan amount
+### Loan interest rate based on loan amount
 
 ```{r}
 ggplot(data = df, mapping = aes(x = loan_amnt,
@@ -525,9 +519,7 @@ ggplot(data = df, mapping = aes(x = loan_amnt,
        fill = "Loan repayment s1tatus")
 ```
  
-### Loan Status
-
-#### Based on gender
+### Loan repayment status based on gender
 
 ```{r}
 ggplot(data = df, mapping = aes(x = person_gender,
@@ -541,7 +533,7 @@ ggplot(data = df, mapping = aes(x = person_gender,
 ```
 The default rate for male loan takers is higher than that or females. This is seen from the difference in relative heights of the bar representing defaulted and repaid loans for either gender.
 
-#### Based on education
+### Loan repayment status based on education
 
 ```{r}
 ggplot(data = df, mapping = aes(x = person_education,
