@@ -8,7 +8,12 @@ output: pdf_document
 # Imports
 
 ```{r}
-required_libraries <- c("dplyr", "tidyverse", "corrr", "corrplot", "MASS")
+required_libraries <- c("dplyr",
+                        "tidyverse",
+                        "corrr",
+                        "corrplot",
+                        "MASS",
+                        "DescTools")
 
 for (required_library in required_libraries) {
   if(!(required_library %in% installed.packages())) {
@@ -33,6 +38,9 @@ theme_update(plot.background = element_blank())
 
 # Remove panel background
 theme_update(panel.background = element_blank())
+
+fig.align = "center"
+out.width = "90%"
 ```
 
 # Loading data
@@ -374,35 +382,37 @@ Most of the loans (>75%) did not perform in the sense that they were eventually 
 
 ## Bivariate Analysis
 
-### Income based on education
-```{r}
-ggplot(df) + 
-  geom_boxplot(mapping = aes(x = person_income, color = person_education)) + 
-  labs(title = "Distribution of income based on education level", x = "Income") +
-  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
-```
-```{r}
-ggplot(df) + 
-  geom_boxplot(mapping = aes(x = person_income, color = person_education), outliers=F, notch=T) +
-  theme(axis.ticks.y = element_blank(), axis.text.y = element_blank()) +
-  labs(title = "Doctorate degree holders have a higher median income than others", x = "Income")
-```
-```{r}
-ggplot(df) + 
-  geom_histogram(mapping = aes(x = person_income, fill = person_education)) +
-  theme(axis.ticks.y = element_blank(), axis.text.y = element_blank()) +
-  facet_grid(person_education ~ .) +
-  scale_x_continuous(limits=c(0, 1.5e+05)) +
-  labs(title = "Doctorate degree holders have a higher median income than others", x = "Income")
-```
+### Income
 
-### Income based on gender
+#### Based on education
+
 ```{r}
-ggplot(data = df) +
-  geom_boxplot(mapping = aes(x = person_income, color = person_gender), outliers=F, notch=T) +
-  labs(title = "Distribution of income based on gender", x = "Income") +
-  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_income,
+                             color = person_education)) + 
+  labs(title = "Distribution of income based on education level",
+       x = "Income") +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 ```
+Even though outliers in terms of income occur at all education levels, the outliers are less pronounced for holders of Masters and Doctorate degrees. 
+
+
+```{r}
+ggplot(df) + 
+  geom_boxplot(mapping = aes(x = person_income,
+                             color = person_education),
+               outliers=F,
+               notch=T) +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(title = "Doctorate degree holders have a higher median income than others",
+       x = "Income")
+```
+Ignoring outliers, it becomes clear that the distribution of income for Doctorate degree holders has a rightward shift relative to people at other education levels. The notch of the boxplot not overlapping with other boxplots indicates that the median is significantly different.
+
+#### Based on gender
+
 ```{r}
 ggplot(df) + 
   geom_histogram(mapping = aes(x = person_income, fill = person_gender), bins = 30) +
@@ -411,17 +421,54 @@ ggplot(df) +
   theme(legend.position = "none") +
   theme(panel.grid.major.y = element_line("grey")) +
   scale_y_continuous(limits = c(0, 2000)) +
-  labs(title = "The distributions of income both genders greatly overlap", x = "Income", y = "Number of people at income level")
+  labs(title = "The distributions of income both genders greatly overlap",
+       x = "Income",
+       y = "Number of people at income level")
 ```
+The distribution of income by gender shows an almost-perfect overlap, indicating that there is no difference in income based on gender.
 
-### Loan amount based on income
+#### Based on home ownership
+
+```{r}
+ggplot(df) + 
+  geom_histogram(mapping = aes(x = person_income, fill = person_home_ownership)) +
+  xlim(0, 1.5e+05) +
+  facet_grid(person_home_ownership ~ .) +
+  theme(legend.position = "none") +
+  theme(panel.grid.major.y = element_line("grey")) +
+  scale_y_continuous(limits = c(0, 2000)) +
+  labs(title = "Distributions of income based on home ownership",
+       x = "Income",
+       y = "Number of people at income level")
+```
+The distributions of income for people who pay neither rent nor mortgage is essentially non-existent on the scale. This is due to how few loans were taken by those who do not have home payments.
+
+#### Based on years of experience
+
+```{r}
+ggplot(data = df) +
+  geom_point(mapping = aes(x = person_emp_exp,
+                           y = person_income,
+                           color = person_education)) +
+  ylim(0, 1.5e+05) +
+  xlim(0, 40) +
+  labs(title = "Income by years of experience",
+       y = "Income",
+       x = "Years of Experience")
+```
+There does not appear to be any relationship between the income and experience, even accounting for level of education.
+
+### Loan amount
+
+#### Based on income
 
 ```{r}
 ggplot(df) + 
   geom_point(mapping = aes(x = person_income, y = loan_amnt), color="skyblue") +
   labs(title = "Loan amount based on income", x = "Income", y = "Loan Amount") +
-  annotate("text", label = "Elites", x=6e+06, y = 5000)
+  annotate("text", label = "Elite earners", x=6.3e+06, y = 5000)
 ```
+Interestingly, the elites who out-earn everyone else were not the takers of the largest loans.
 
 ```{r}
 ggplot(df) + 
@@ -429,32 +476,126 @@ ggplot(df) +
   labs(title = "Loan amount based on income", x = "Income", y = "Loan Amount") +
   xlim(0, 1.5e+05)
 ```
+Accounting for outliers in income, there does not appear to be any relationship between loan amount and income.
 
-#### With log transformation on income
+##### With log transformation on income
 
 ```{r}
 ggplot(df) + 
-  geom_point(mapping = aes(x = log(person_income), y = loan_amnt, color = person_gender), alpha = 0.2) +
-  geom_smooth(mapping = aes(x = log(person_income), y = loan_amnt, color = person_gender), se = F) + 
-  labs(title = "Loan amount vs log of income grouped by gender", x = "Log of income", y = "Loan amount")
+  geom_point(mapping = aes(x = log(person_income),
+                           y = loan_amnt,
+                           color = person_gender),
+             alpha = 0.2) +
+  geom_smooth(mapping = aes(x = log(person_income),
+                            y = loan_amnt,
+                            color = person_gender),
+              se = F) + 
+  labs(title = "Loan amount vs log of income grouped by gender",
+       x = "Log of income",
+       y = "Loan amount")
 ```
 
-#### With log transformation on both income and loan amount
+##### With log transformation on both income and loan amount
 
 ```{r}
-ggplot(data=df, mapping= aes(x=log(person_income), y=log(loan_amnt), color=loan_intent)) + 
+ggplot(data=df, mapping= aes(x=log(person_income),
+                             y=log(loan_amnt),
+                             color=loan_intent)) + 
   geom_point(alpha = 0.2) +
   geom_smooth(se = F) +
-  labs(title = "Log of loan amount vs log of income grouped by loan intent", x = "log of income", y = "Log of loan amount")
+  labs(title = "Log of loan amount vs log of income grouped by loan intent",
+       x = "log of income",
+       y = "Log of loan amount")
 ```
+ Transforming the loan amount and income variables using log did not increase the level of relationship between the 2 variables.
+ 
+ 
+### Loan interest rate
+
+#### Based on loan amount
+
+```{r}
+ggplot(data = df, mapping = aes(x = loan_amnt,
+                                y = loan_int_rate,
+                                color = factor(loan_status))) +
+  geom_point() + 
+  labs(title = "Loan interest rate based on loan amount",
+       x = "Loan amount",
+       y = "Loan interest rate",
+       fill = "Loan repayment s1tatus")
+```
+ 
+### Loan Status
+
+#### Based on gender
+
+```{r}
+ggplot(data = df, mapping = aes(x = person_gender,
+                                fill = factor(loan_status))) +
+  geom_bar(position = "dodge") +
+  scale_fill_discrete(labels = c("0" = "Defaulted", "1" = "Repaid")) +
+  labs(title = "Loan repayment based on gender",
+       x = "Gender",
+      y = "Count of loans",
+      fill = "Loan Status")
+```
+The default rate for male loan takers is higher than that or females. This is seen from the difference in relative heights of the bar representing defaulted and repaid loans for either gender.
+
+#### Based on education
+
+```{r}
+ggplot(data = df, mapping = aes(x = person_education,
+                                fill = factor(loan_status))) +
+  geom_bar(position = "dodge") +
+  scale_fill_discrete(labels = c("0" = "Defaulted", "1" = "Repaid")) +
+  labs(title = "Loan repayment based on education level",
+       x = "Education level",
+      y = "Count of loans",
+      fill = "Loan Status") +
+  scale_x_discrete(limits = c("High School",
+                              "Associate",
+                              "Bachelor",
+                              "Master",
+                              "Doctorate"))
+```
+Doctorate degre holders take the fewest number loans, and have the fewest defaults of any education level.
+
+## Correlation Analysis
+
+```{r}
+correlation_matrix <- cor(df[, sapply(df, is.numeric)])
+corrplot(correlation_matrix,
+         method = "shade",
+         type = "lower",
+         order = "hclust",
+         tl.col = "black",
+         tl.srt = 45)
+```
+
+# Feature Engineering
+
+```{r}
+df_clean = df |>
+  mutate(person_age = Winsorize(person_age, val=c(20, 40))) |>
+  mutate(person_emp_exp = Winsorize(person_emp_exp, val = c(0, 20))) |>
+  mutate(person_income = Winsorize(person_income, val = c(0, 150000)))
+```
+
 
 # Modelling
 
-## Linear Model using step-wise feature selection
+I would like to answer the following questions:
+
+1. Can one's income be predicted using the other features?
+2. Can the loan repayment status be predicted given the other features?
+
+## Model to predict income
+
+### Linear Model using step-wise feature selection
 
 ```{r}
-lm_min <- lm(person_income ~ 1, data = df)
-lm_max <- lm(person_income ~ ., data = df)
+lm_min <- lm(person_income ~ 1, data = df_clean)
+lm_max <- lm(person_income ~ ., data = df_clean)
 ```
 
 ```{r}
@@ -464,3 +605,6 @@ step(lm_min, scope = list(upper = lm_max), direction = "forward")
 ```{r}
 step(lm_max, scope = list(lower = lm_min), direction = "backward")
 ```
+
+## Model to predict loan repayment status
+
