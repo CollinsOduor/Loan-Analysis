@@ -13,7 +13,10 @@ required_libraries <- c("dplyr",
                         "corrr",
                         "corrplot",
                         "MASS",
-                        "DescTools")
+                        "DescTools",
+                        "caret",
+                        "e1071",
+                        "pROC")
 
 for (required_library in required_libraries) {
   if(!(required_library %in% installed.packages())) {
@@ -569,8 +572,18 @@ corrplot(correlation_matrix,
 ```{r}
 df_clean = df |>
   mutate(person_age = Winsorize(person_age, val=c(20, 40))) |>
-  mutate(person_emp_exp = Winsorize(person_emp_exp, val = c(0, 20))) |>
+  mutate(person_emp_exp = Winsorize(person_emp_exp, val = c(0, 45))) |>
   mutate(person_income = Winsorize(person_income, val = c(0, 150000)))
+
+set.seed(123)
+
+sample_size <- floor(0.8 * nrow(df_clean))
+
+# Generate random indices
+train_indices <- sample(seq_len(nrow(df_clean)), size = sample_size)
+
+train = df_clean[train_indices,]
+test = df_clean[-train_indices,]
 ```
 
 
@@ -586,8 +599,8 @@ I would like to answer the following questions:
 ### Linear Model using step-wise feature selection
 
 ```{r}
-lm_min <- lm(person_income ~ 1, data = df_clean)
-lm_max <- lm(person_income ~ ., data = df_clean)
+lm_min <- lm(person_income ~ 1, data = train)
+lm_max <- lm(person_income ~ ., data = train)
 ```
 
 ```{r}
@@ -598,5 +611,96 @@ step(lm_min, scope = list(upper = lm_max), direction = "forward")
 step(lm_max, scope = list(lower = lm_min), direction = "backward")
 ```
 
+
+### Evaluation of models
+
+```{r}
+# From step-wise forward
+stepwise_forward <- lm(formula = person_income ~ loan_amnt +
+               loan_percent_income +
+               person_home_ownership +
+               person_age +
+               loan_int_rate +
+               loan_intent +
+               loan_status +
+               person_emp_exp +
+               previous_loan_defaults_on_file +
+               credit_score,
+             data = train)
+
+# From step-wise backward
+stepwise_backward <- lm(formula = person_income ~ person_age +
+               person_emp_exp +
+               person_home_ownership +
+               loan_amnt +
+               loan_intent +
+               loan_int_rate +
+               loan_percent_income +
+               credit_score +
+               previous_loan_defaults_on_file +
+               loan_status,
+             data = train)
+
+full_model <- lm(formula = person_income ~ ., data = train)
+
+test$predictions_stepwise_forward <- predict(stepwise_forward,
+                                             newdata = test)
+test$predictions_stepwise_backward <- predict(stepwise_backward,
+                                              newdata = test)
+test$predictions_full <- predict(full_model, newdata = test)
+
+rmse_stepwise_forward = sqrt(mean(
+  test$person_income - test$predictions_stepwise_forward)^2)
+rmse_stepwise_backward = sqrt(mean(
+  test$person_income - test$predictions_stepwise_backward)^2)
+rmse_full = sqrt(mean(test$person_income - test$predictions_full)^2)
+
+mae_stepwise_forward = mean(abs(
+  test$person_income - test$predictions_stepwise_forward))
+mae_stepwise_backward = mean(abs(
+  test$person_income - test$predictions_stepwise_backward))
+```
+
+```{r}
+paste0(rmse_stepwise_forward)
+paste0(rmse_stepwise_backward)
+paste0(rmse_full)
+
+paste0(mae_stepwise_forward)
+paste0(mae_stepwise_backward)
+```
+We can choose either model 1 or model 2. They are both parsimonious relative to the full model, but have a similar performance (by RMSE and MAE) and also have the same number of variables.
+
+
+```{r}
+plot(stepwise_forward)
+```
+```{r}
+plot(stepwise_backward)
+```
+
 ## Model to predict loan repayment status
+
+```{r}
+logistic_model <- glm(loan_status ~ ., data=train,
+                      family="binomial")
+```
+
+
+```{r}
+summary(logistic_model)
+```
+```{r}
+pred <- predict(logistic_model, test)
+confusionMatrix(as.factor(ifelse(pred >= 0.5, 1, 0)), as.factor(test$loan_status))
+```
+
+```{r}
+
+roc_obj <- roc(response = test$loan_status, predictor = pred)
+
+plot(roc_obj, col = "blue", main = "ROC Curve - Logistic Regression")
+
+auc(roc_obj)
+```
 
