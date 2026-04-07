@@ -16,7 +16,8 @@ required_libraries <- c("dplyr",
                         "DescTools",
                         "caret",
                         "e1071",
-                        "pROC")
+                        "pROC",
+                        "plotROC")
 
 for (required_library in required_libraries) {
   if(!(required_library %in% installed.packages())) {
@@ -131,12 +132,13 @@ Fewer loans were taken by people who hold at least a Master's degree. Interestin
 df |>
   group_by(person_gender) |>
   summarise(freq = n(), .groups = "drop") |>
+  mutate(proportion = paste0(round(freq / sum(freq), 2)*100, "%")) |>
   ggplot(mapping = aes(x = "", y = freq, fill = person_gender)) + 
     geom_bar(stat = "identity", width = 1) +
     coord_polar("y", start = 0) +
     labs(title = "Composition of loan takers by gender") +
     theme_void() +
-    geom_text(aes(label = person_gender),
+    geom_text(aes(label = paste(person_gender, proportion, sep = ": ")),
               position = position_stack(vjust = 0.5)) +
     theme(legend.position = "none") +
     scale_fill_brewer(palette = "RdYlGn")
@@ -512,14 +514,17 @@ ggplot(data=df, mapping= aes(x=log(person_income),
 ### Loan interest rate based on loan amount
 
 ```{r}
-ggplot(data = df, mapping = aes(x = loan_amnt,
+df |>
+  mutate(loan_status = ifelse(loan_status, "Repaid", "Defaulted")) |>
+ggplot(mapping = aes(x = loan_amnt,
                                 y = loan_int_rate,
-                                color = factor(loan_status))) +
+                                color = loan_status)) +
   geom_point() + 
   labs(title = "Loan interest rate based on loan amount",
        x = "Loan amount",
        y = "Loan interest rate",
-       fill = "Loan repayment s1tatus")
+       fill = "Loan repayment status") +
+  labs(color="Loan status")
 ```
  
 ### Loan repayment status based on gender
@@ -691,13 +696,21 @@ logistic_model <- glm(loan_status ~ ., data=train,
 summary(logistic_model)
 ```
 ```{r}
-pred <- predict(logistic_model, test)
-confusionMatrix(as.factor(ifelse(pred >= 0.5, 1, 0)), as.factor(test$loan_status))
+test$predicted_loan_repayment_probs <- predict(logistic_model, test)
+test <- test |>
+  mutate(predicted_loan_repayment = ifelse(predicted_loan_repayment_probs >= 0.5, 1, 0))
+confusionMatrix(as.factor(test$predicted_loan_repayment), as.factor(test$loan_status))
 ```
+```{r}
+ggplot(test, aes(d = loan_status, m = predicted_loan_repayment)) + geom_roc()
+```
+
+
+
 
 ```{r}
 
-roc_obj <- roc(response = test$loan_status, predictor = pred)
+roc_obj <- roc(response = test$loan_status, predictor = test$predicted_loan_repayment)
 
 plot(roc_obj, col = "blue", main = "ROC Curve - Logistic Regression")
 
