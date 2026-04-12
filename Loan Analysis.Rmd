@@ -1,9 +1,19 @@
 ---
 title: "Loan Analysis"
-author: "Collins Oduor"
+author: "Group 1"
 date: "2026-03-31"
 output: pdf_document
 ---
+
+Collins Oduor - 219858
+Michelle Kalevela - 222647
+Diana Otieno - 222658
+Methuselah Amtany - 223930
+Wesley Gathua - 223347
+Dennis Koome - 193582
+Wendy Oira - 221007
+Nehema Mburuki - 190546
+
 
 # Imports
 
@@ -28,8 +38,8 @@ for (required_library in required_libraries) {
 }
 ```
 
-# Configuration
 
+# Configuration
 ```{r setup, include=TRUE}
 # Ensure code blocks are shown on knitting to the target
 knitr::opts_chunk$set(echo = TRUE)
@@ -108,6 +118,7 @@ df |>
           axis.ticks.y = element_blank())
 ```
 Fewer loans were taken for the purposes of home improvement than any other intent. Education and medical reasons were the most-cited reasons by loan takers.
+
 
 ### Education level
 
@@ -577,8 +588,12 @@ corrplot(correlation_matrix,
 ```{r}
 df_clean = df |>
   mutate(person_age = Winsorize(person_age, val=c(20, 40))) |>
-  mutate(person_emp_exp = Winsorize(person_emp_exp, val = c(0, 45))) |>
-  mutate(person_income = Winsorize(person_income, val = c(0, 150000)))
+  mutate(person_emp_exp = Winsorize(person_emp_exp, val=c(0, 20))) |>
+  mutate(person_income = log(person_income)) 
+
+#df_clean <- df_clean[df_clean$person_education != 'Doctorate']
+#df_clean <- df_clean[(!df_clean$person_home_ownership == 'OWN') & (!df_clean$person_home_ownership == 'OTHER')]
+
 
 set.seed(123)
 
@@ -607,6 +622,7 @@ I would like to answer the following questions:
 lm_min <- lm(person_income ~ 1, data = train)
 lm_max <- lm(person_income ~ ., data = train)
 ```
+
 
 ```{r}
 step(lm_min, scope = list(upper = lm_max), direction = "forward")
@@ -678,10 +694,40 @@ We can choose either model 1 or model 2. They are both parsimonious relative to 
 
 
 ```{r}
-plot(stepwise_forward)
+summary(stepwise_forward)
 ```
+
 ```{r}
-plot(stepwise_backward)
+par(mfrow = c(2,2))
+autoplot(stepwise_forward)
+```
+
+
+Residual vs Fitted plot: The plot shows that the model violates the linearity assumption as the red line is not straight.
+
+Q-Q Residuals plot: The plot above shows that the model violates the normality assumption. 
+
+
+Scale Locations plot: The plot shows that the variance is not constant for all values of X. The next iterations of improving the model should attempt to resolve this.
+
+
+Residual vs Leverage plot: The independence assumption of the residuals holds.
+
+
+```{r}
+new_stepwise_forward <- lm(person_income ~ loan_amnt + loan_percent_income + person_home_ownership + person_age + loan_int_rate + loan_intent , data = train)
+```
+
+
+```{r}
+par(mfrow = c(2,2))
+autoplot(new_stepwise_forward)
+```
+
+
+```{r}
+par(mfrow = c(2,2))
+autoplot(stepwise_backward)
 ```
 
 ## Model to predict loan repayment status
@@ -701,8 +747,9 @@ test <- test |>
   mutate(predicted_loan_repayment = ifelse(predicted_loan_repayment_probs >= 0.5, 1, 0))
 confusionMatrix(as.factor(test$predicted_loan_repayment), as.factor(test$loan_status))
 ```
+
 ```{r}
-ggplot(test, aes(d = loan_status, m = predicted_loan_repayment)) + geom_roc()
+ggplot(test, aes(d = loan_status, m = predicted_loan_repayment_probs)) + geom_roc()
 ```
 
 
@@ -710,9 +757,9 @@ ggplot(test, aes(d = loan_status, m = predicted_loan_repayment)) + geom_roc()
 
 ```{r}
 
-roc_obj <- roc(response = test$loan_status, predictor = test$predicted_loan_repayment)
+roc_obj <- roc(response = test$loan_status, predictor = test$predicted_loan_repayment_probs)
 
-plot(roc_obj, col = "blue", main = "ROC Curve - Logistic Regression")
+# plot(roc_obj, col = "blue", legacy.axes = TRUE, main = "ROC Curve - Logistic Regression")
 
 auc(roc_obj)
 ```
