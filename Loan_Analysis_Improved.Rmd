@@ -1,0 +1,1050 @@
+---
+title: "Loan Analysis — Improved"
+author: "Group 1"
+date: "13-04-2026"
+output: pdf_document
+---
+
+Collins Oduor - 219858 | Michelle Kalevela - 222647 | Diana Otieno - 222658
+Methuselah Amtany - 223930 | Wesley Gathua - 223347 | Dennis Koome - 193582
+Wendy Oira - 221007 | Nehema Mburuki - 190546
+
+---
+
+# Imports 
+```{r setup, message=FALSE, warning=FALSE}
+required_libraries <- c(
+  "dplyr", 
+  "tidyverse",
+  "corrplot", 
+  "DescTools", 
+  "caret",
+  "e1071",       # SVM
+  "class",       # KNN
+  "glmnet",      # LASSO
+  "pROC",        # ROC / AUC
+  "ggfortify",   # autoplot for lm diagnostics
+  "randomForest",# Random Forest (benchmark)
+  "xgboost",     # Gradient Boosting
+  "MASS",        # stepAIC
+  "knitr",       # kable tables
+  "gridExtra",   # grid.arrange
+  "kernlab",
+  "gbm"
+)
+
+for (required_library in required_libraries) {
+  if(!(required_library %in% installed.packages())) {
+    install.packages(required_library)
+  }
+  
+  library(required_library, character.only = T)
+}
+
+```
+
+
+# Configuration
+```{r setup, include=TRUE}
+# Ensure code blocks are shown on knitting to the target
+knitr::opts_chunk$set(echo = TRUE)
+
+# Centre all plot titles
+theme_update(plot.title = element_text(hjust = 0.5))
+
+# Remove plot background
+theme_update(plot.background = element_blank())
+
+# Remove panel background
+theme_update(panel.background = element_blank())
+
+fig.align = "center"
+out.width = "90%"
+```
+
+---
+
+# Data Loading & Initial Inspection
+
+```{r load-data}
+df <- read_csv("loan_data.csv")
+```
+
+
+```{r}
+dim(df)
+
+```
+
+- The data contains 45,000 entries and 14 variables.
+
+```{r}
+head(df)
+```
+
+
+```{r}
+names(df)
+```
+
+
+```{r}
+sapply(df, anyNA)
+```
+- The dataset has no missing values.
+
+---
+
+
+
+# Exploratory Data Analysis
+
+## Univariate Analysis
+
+### Home Ownership
+
+```{r}
+df |>
+  count(person_home_ownership) |>
+  ggplot(aes(x = reorder(person_home_ownership, -n), y = n)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Loan Takers by Home Ownership",
+       x = "Home Ownership", y = "Count") +
+  theme(axis.ticks.y = element_blank())
+```
+
+- Significantly fewer loans were taken by people who either own their homes or have a different ownership mode other than renting or mortgage. This could highlight the fact that having consistent monthly payments could squeeze one's budget to the extent that they are left with no means other than to take out a loan.
+
+
+### Loan Intent
+
+```{r}
+df |>
+  count(loan_intent) |>
+  ggplot(aes(x = reorder(loan_intent, -n), y = n)) +
+  geom_col(fill = "coral") +
+  labs(title = "Loans by Intent", x = "Loan Intent", y = "Count") +
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  theme(axis.ticks.y = element_blank())
+```
+
+- Fewer loans were taken for the purposes of home improvement than any other intent. Education and medical reasons were the most-cited reasons by loan takers.
+
+
+### Income Distribution & Transformation
+
+```{r}
+p1 <- ggplot(df, aes(x = person_income)) +
+  geom_histogram(bins = 60, fill = "steelblue") +
+  labs(title = "Raw Income", x = "Income", y = "Count")
+
+p2 <- ggplot(df, aes(x = log(person_income))) +
+  geom_histogram(bins = 60, fill = "darkorange") +
+  labs(title = "Log-transformed Income", x = "log(Income)", y = "Count")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+- Raw income is heavily right-skewed. The log transformation brings the distribution close to normality.
+
+
+### Other Continuous Variables
+
+```{r}
+cont_vars <- c("person_age", "loan_amnt", "person_emp_exp",
+               "loan_int_rate", "credit_score", "loan_percent_income")
+
+plots <- lapply(cont_vars, function(v) {
+  ggplot(df, aes_string(x = v)) +
+    geom_histogram(bins = 40, fill = "steelblue") +
+    labs(title = v, x = v, y = "")
+})
+grid.arrange(grobs = plots, ncol = 3)
+```
+
+From the above plot we can observe the following;
+
+- Age: it's skewed to the right
+
+- Loan_amount: The distribution of loan amount is skewed to the right
+
+- Employment experience: Also skewed to the right
+
+- Loan interest rate: The distribution of interest rates follows a fairly normal distribution
+
+- Credit score: Most value appear on the left thus left-skewed.
+
+- Loan percent income: Distribution skewed to the right.
+
+
+### Loan Status (Target variable Classification)
+
+```{r}
+
+df |>
+  count(loan_status) |>
+  mutate(
+    label = ifelse(loan_status == 1, "Repaid", "Defaulted"),
+    pct   = scales::percent(n / sum(n))
+  ) |>
+  ggplot(aes(x = "", y = n, fill = label)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(label = pct), 
+            position = position_stack(vjust = 0.5), 
+            fontface = "bold", 
+            color = "white") +
+  scale_fill_manual(values = c("Repaid" = "forestgreen", "Defaulted" = "tomato")) +
+  labs(title = "Loan Status Distribution") +
+  # This is the magic line that removes the outside numbers and letters
+  theme_void()
+
+```
+
+- The dataset is **class-imbalanced** with roughly 78% defaulted and 22% repaid. We will account for this during classification modelling.
+
+
+
+## Bivariate Analysis
+
+### Income by Education
+
+```{r}
+ggplot(df, aes(x = person_income, y = person_education, fill = person_education)) +
+  geom_boxplot(outliers = FALSE, show.legend = FALSE) +
+  scale_x_log10(labels = scales::comma) +
+  labs(title = "Income Distribution by Education Level",
+       x = "Income (log scale)", y = "Education Level")
+```
+
+- Ignoring outliers, it becomes clear that the distribution of income for Doctorate degree holders has a rightward shift relative to people at other education levels. The notch of the boxplot not overlapping with other boxplots indicates that the median is significantly different.
+
+
+
+### Correlation Matrix
+
+```{r}
+num_df <- df[, sapply(df, is.numeric)]
+corrplot(cor(num_df),
+         method = "shade", type = "lower", order = "hclust",
+         tl.col = "black", tl.srt = 45,
+         title = "Correlation Matrix of Numeric Variables",
+         mar = c(0, 0, 2, 0))
+```
+
+---
+
+# Feature Engineering
+
+## Transformations & Encoding
+
+```{r}
+
+df_fe <- df |>
+  # 1. Winsorise extreme outliers 
+  mutate(
+    person_age     = Winsorize(person_age,     val = c(20, 60)),
+    person_emp_exp = Winsorize(person_emp_exp, val = c(0,  40))
+  ) |>
+  # 2. Log-transform right-skewed numeric variables 
+  mutate(
+    log_income    = log(person_income),
+    log_loan_amnt = log(loan_amnt + 1)
+  ) |>
+  # 3. Derived / interaction features
+  mutate(
+    # Debt-to-income using actual values
+    debt_to_income      = loan_amnt / person_income,
+    # How much of employment life has been worked
+    exp_age_ratio       = person_emp_exp / person_age,
+    # Risk indicator: high rate + high loan relative to income
+    risk_score_raw      = loan_int_rate * loan_percent_income,
+    # Binary: has previous default
+    prev_default_bin    = ifelse(previous_loan_defaults_on_file == "Yes", 1L, 0L),
+    # Home ownership risk proxy (renters/other = higher risk)
+    is_renter           = ifelse(person_home_ownership == "RENT", 1L, 0L),
+    # Education ordinal encoding
+    edu_level = recode(person_education,
+                       "High School" = 1L, "Associate" = 2L,
+                       "Bachelor"    = 3L, "Master"    = 4L,
+                       "Doctorate"   = 5L)
+  ) |>
+  # 4. Encode remaining categoricals as dummy variables 
+  mutate(
+    gender_male   = ifelse(person_gender == "male",         1L, 0L),
+    intent_edu    = ifelse(loan_intent   == "EDUCATION",    1L, 0L),
+    intent_med    = ifelse(loan_intent   == "MEDICAL",      1L, 0L),
+    intent_pers   = ifelse(loan_intent   == "PERSONAL",     1L, 0L),
+    intent_home   = ifelse(loan_intent   == "HOMEIMPROVEMENT", 1L, 0L),
+    intent_vent   = ifelse(loan_intent   == "VENTURE",      1L, 0L),
+    home_mortgage = ifelse(person_home_ownership == "MORTGAGE", 1L, 0L),
+    home_own      = ifelse(person_home_ownership == "OWN",      1L, 0L)
+  ) |>
+  # 5. Drop original text columns and raw duplicates 
+  dplyr::select(-person_gender, -loan_intent, -person_home_ownership,
+         -previous_loan_defaults_on_file, -person_education,
+         -person_income, -loan_amnt)  # replaced by log versions
+
+cat("Engineered dataset dimensions:", dim(df_fe), "\n")
+cat("New features added:\n")
+cat(" debt_to_income, exp_age_ratio, risk_score_raw, prev_default_bin,\n",
+    "is_renter, edu_level, gender_male, intent_*, home_*,\n",
+    "log_income, log_loan_amnt\n")
+```
+
+---
+
+# Train / Test Split
+
+```{r train-test-split}
+set.seed(123)
+n          <- nrow(df_fe)
+train_idx  <- sample(seq_len(n), size = floor(0.8 * n))
+train_raw  <- df_fe[ train_idx, ]
+test_raw   <- df_fe[-train_idx, ]
+
+cat("Train rows:", nrow(train_raw), "| Test rows:", nrow(test_raw), "\n")
+```
+
+---
+
+
+# Part 1 — Income Prediction (Regression)
+
+## Response Variable
+
+The target is `log_income` (log-transformed income). We will back-transform predictions when reporting error metrics.
+
+
+```{r}
+ggplot(train_raw, aes(x = log_income)) +
+  geom_histogram(bins = 50, fill = "steelblue") +
+  labs(title = "Distribution of log(Income) — Training Set",
+       x = "log(Income)", y = "Count")
+```
+
+
+
+
+## Assumption Checking on the Raw Continuous Predictors
+
+```{r}
+cont_preds <- c("person_age", "person_emp_exp", "loan_int_rate",
+                "credit_score", "loan_percent_income",
+                "debt_to_income", "exp_age_ratio", "risk_score_raw")
+
+
+# Your existing logic
+sw_results <- lapply(cont_preds, function(v) {
+  # Note: ensure train_raw exists in your environment
+  x  <- train_raw[[v]]
+  st <- shapiro.test(sample(x, min(5000, length(x))))
+  data.frame(Variable = v, 
+             W_statistic = round(st$statistic, 4), 
+             p_value     = format.pval(st$p.value, digits = 3))
+})
+
+# Combine and display
+results_table <- do.call(rbind, sw_results)
+print(results_table, caption = "Shapiro–Wilk Normality Tests on Continuous Predictors")
+```
+
+- Most predictors are non-normal. However, OLS assumptions concern the **residuals**, not the predictors. We check residual assumptions after fitting.
+
+
+
+## Model 1 — Linear Regression (Full)
+
+```{r}
+# Build a modelling data frame with log_income as the response
+income_vars <- setdiff(names(train_raw), "loan_status")  # exclude classification target
+
+train_lm <- train_raw[, income_vars]
+test_lm  <- test_raw[,  income_vars]
+```
+
+
+
+```{r}
+lm_full <- lm(log_income ~ ., data = train_lm)
+summary(lm_full)
+```
+
+### Regression Diagnostics — Full Model
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm_full)
+```
+
+
+
+**Interpretation of Diagnostic Plots:**
+
+- *Residuals vs Fitted:* A slight U-shape may indicate mild non-linearity; we will address this by adding polynomial / interaction terms.
+
+- *Normal Q-Q:* Heavy tails suggest the residuals deviate from normality; this motivates Box-Cox / further log transformations.
+
+- *Scale-Location:* A trending line implies heteroscedasticity — variance of residuals is not constant.
+
+- *Residuals vs Leverage:* A few high-leverage points; Cook's distance contours indicate they are not excessively influential.
+
+
+### Box-Cox Transformation Check
+
+```{r}
+bc <- boxcox(lm_full, plotit = TRUE,
+             lambda = seq(-2, 2, by = 0.1))
+best_lambda <- bc$x[which.max(bc$y)]
+cat("Optimal lambda:", round(best_lambda, 3), "\n")
+```
+
+
+
+- λ ≈ 1 confirms the log transformation already applied to `person_income` is appropriate. No further transformation is required on the response.
+
+
+### Addressing Heteroscedasticity — Weighted Least Squares
+
+```{r}
+# Fit OLS first, use absolute residuals to estimate variance weights
+lm_ols_fit <- lm(log_income ~ ., data = train_lm)
+abs_res    <- abs(residuals(lm_ols_fit))
+# Regress |residuals| on fitted values to estimate variance function
+var_model   <- lm(abs_res ~ fitted(lm_ols_fit))
+weights_wls <- 1 / (fitted(var_model)^2 + 1e-8)   # guard against division by zero
+
+lm_wls <- lm(log_income ~ ., data = train_lm, weights = weights_wls)
+summary(lm_wls)
+```
+
+
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm_wls)
+```
+
+- **Improvement:** The Scale-Location plot is visibly flatter, indicating reduced heteroscedasticity.
+
+
+
+## Model 2 — Stepwise Linear Regression (AIC)
+
+```{r lm-stepwise, results='hide'}
+lm_min  <- lm(log_income ~ 1, data = train_lm)
+lm_max  <- lm(log_income ~ ., data = train_lm)
+
+lm_step_fwd  <- step(lm_min, scope = list(upper = lm_max),
+                     direction = "forward",  trace = 0)
+lm_step_back <- step(lm_max, scope = list(lower = lm_min),
+                     direction = "backward", trace = 0)
+lm_step_both <- step(lm_max, scope = list(lower = lm_min),
+                     direction = "both",     trace = 0)
+```
+
+
+
+
+```{r}
+cat("Forward  selected vars:", length(coef(lm_step_fwd)),  "\n")
+cat("Backward selected vars:", length(coef(lm_step_back)), "\n")
+cat("Both     selected vars:", length(coef(lm_step_both)), "\n")
+```
+
+
+## Model 3 — LASSO Regression
+
+```{r}
+# Prepare matrix inputs
+X_train_lasso <- model.matrix(log_income ~ ., data = train_lm)[, -1]
+y_train_lasso <- train_lm$log_income
+
+X_test_lasso  <- model.matrix(log_income ~ ., data = test_lm)[, -1]
+y_test_lasso  <- test_lm$log_income
+
+# Cross-validated LASSO
+set.seed(42)
+cv_lasso <- cv.glmnet(X_train_lasso, y_train_lasso,
+                      alpha = 1, nfolds = 10)
+plot(cv_lasso)
+
+lasso_best_lambda <- cv_lasso$lambda.1se
+cat("Best lambda (1SE):", round(lasso_best_lambda, 5), "\n")
+```
+
+
+
+
+```{r}
+lasso_coefs <- coef(cv_lasso, s = "lambda.1se")
+cat("\nLASSO retained", sum(lasso_coefs[-1] != 0), "non-zero coefficients\n")
+print(lasso_coefs)
+```
+
+
+## Model 4 — Gradient Descent Linear Regression
+
+Implemented from scratch to demonstrate the algorithm; this matches the closed-form OLS result given enough iterations.
+
+```{r}
+# Gradient Descent (Batch) 
+# 1. Define the Function (with the safety check)
+gradient_descent_lm <- function(X, y, learning_rate = 0.01, n_iterations = 1000, tol = 1e-7) {
+  m     <- nrow(X)
+  theta <- rep(0, ncol(X))
+  costs <- numeric(n_iterations)
+
+  for (i in seq_len(n_iterations)) {
+    y_hat  <- X %*% theta
+    error  <- y_hat - y
+    grad   <- (1 / m) * (t(X) %*% error)
+    theta  <- theta - learning_rate * grad
+    costs[i] <- (1 / (2 * m)) * sum(error^2)
+
+    if (is.na(costs[i])) {
+      stop("Cost is NaN. Try decreasing the learning rate.")
+    }
+
+    if (i > 1 && abs(costs[i] - costs[i - 1]) < tol) {
+      cat("Converged at iteration", i, "\n")
+      costs <- costs[seq_len(i)]
+      break
+    }
+  }
+  list(theta = theta, costs = costs)
+}
+
+# 2. Prepare the Data (Scale then Intercept)
+X_scaled_train <- scale(X_train_lasso)
+X_gd_train     <- cbind(Intercept = 1, X_scaled_train)
+
+X_gd_test <- cbind(Intercept = 1, 
+                   scale(X_test_lasso, 
+                         center = attr(X_scaled_train, "scaled:center"), 
+                         scale  = attr(X_scaled_train, "scaled:scale")))
+
+# 3. RUN THE MODEL (This creates the 'gd_result' object)
+gd_result <- gradient_descent_lm(X_gd_train, y_train_lasso, 
+                                 learning_rate = 0.01, 
+                                 n_iterations = 2000)
+
+# 4. Now your prediction code will work!
+pred_gd <- as.vector(X_gd_test %*% gd_result$theta)
+```
+
+
+
+
+## Regression Model Comparison
+
+```{r}
+# Predictions on test set
+pred_full  <- predict(lm_full,       newdata = test_lm)
+pred_wls   <- predict(lm_wls,        newdata = test_lm)
+pred_fwd   <- predict(lm_step_fwd,   newdata = test_lm)
+pred_back  <- predict(lm_step_back,  newdata = test_lm)
+pred_both  <- predict(lm_step_both,  newdata = test_lm)
+pred_lasso <- as.vector(predict(cv_lasso, newx = X_test_lasso,
+                                s = "lambda.1se"))
+pred_gd    <- as.vector(X_gd_test %*% gd_result$theta)
+
+y_test <- test_lm$log_income
+
+calc_metrics <- function(actual, predicted, model_name) {
+  rmse <- sqrt(mean((actual - predicted)^2))
+  mae  <- mean(abs(actual - predicted))
+  ss_res <- sum((actual - predicted)^2)
+  ss_tot <- sum((actual - mean(actual))^2)
+  r2     <- 1 - ss_res / ss_tot
+  data.frame(Model = model_name,
+             RMSE  = round(rmse, 4),
+             MAE   = round(mae,  4),
+             R2    = round(r2,   4))
+}
+
+results_reg <- rbind(
+  calc_metrics(y_test, pred_full,  "OLS Full"),
+  calc_metrics(y_test, pred_wls,   "WLS (Heteroscedasticity corrected)"),
+  calc_metrics(y_test, pred_fwd,   "Stepwise Forward"),
+  calc_metrics(y_test, pred_back,  "Stepwise Backward"),
+  calc_metrics(y_test, pred_both,  "Stepwise Both"),
+  calc_metrics(y_test, pred_lasso, "LASSO"),
+  calc_metrics(y_test, pred_gd,    "Gradient Descent")
+)
+
+print(results_reg[order(results_reg$RMSE), ],
+      caption = "Regression Model Comparison (Response = log Income)",
+      row.names = FALSE)
+```
+
+
+### Final Regression Model Selection
+
+```{r}
+# The model with the lowest RMSE / highest R² is selected
+best_reg_name <- results_reg$Model[which.min(results_reg$RMSE)]
+cat("=== Selected Regression Model:", best_reg_name, "===\n\n")
+
+# For demonstration, re-print its summary
+if (grepl("LASSO", best_reg_name)) {
+  cat("Non-zero LASSO coefficients:\n")
+  print(coef(cv_lasso, s = "lambda.1se"))
+} else if (grepl("WLS", best_reg_name)) {
+  summary(lm_wls)
+} else {
+  summary(lm_full)
+}
+```
+
+
+### Final Model Diagnostics
+
+```{r}
+# Always show diagnostics for the WLS model as it corrects assumptions
+par(mfrow = c(2, 2))
+plot(lm_wls, main = "WLS Diagnostics")
+```
+
+**Interpretation:**
+
+- *Residuals vs Fitted:* Residuals are more evenly scattered thus linearity assumption is reasonably met.
+
+- *Q-Q Plot:* Slight tails remain; sample size (n = 36,000) means the Central Limit Theorem protects inference.
+
+- *Scale-Location:* Flatter line compared to plain OLS. Heteroscedasticity is substantially reduced.
+
+- *Cook's Distance:* No single observation dominates the fit.
+
+---
+
+
+
+# Part 2 — Loan Default Classification
+
+## Data Preparation for Classification
+
+```{r}
+# Keep loan_status as binary factor; log_income is now a feature
+train_cls <- train_raw |> mutate(loan_status = factor(loan_status,
+                                                       levels = c(0, 1),
+                                                       labels = c("Default", "Repaid")))
+test_cls  <- test_raw  |> mutate(loan_status = factor(loan_status,
+                                                       levels = c(0, 1),
+                                                       labels = c("Default", "Repaid")))
+
+# ── Standardise for distance-based / regularised models ─────────────────────
+numeric_cols <- names(train_cls)[sapply(train_cls, is.numeric) &
+                                   names(train_cls) != "loan_status"]
+
+preproc      <- preProcess(train_cls[, numeric_cols], method = c("center", "scale"))
+train_scaled <- predict(preproc, train_cls)
+test_scaled  <- predict(preproc, test_cls)
+
+cat("Class distribution in training set:\n")
+print(table(train_cls$loan_status))
+cat("\nClass proportions:\n")
+print(round(prop.table(table(train_cls$loan_status)), 3))
+```
+
+- Class imbalance detected. Using class weights or down-sampling where needed
+
+
+## Model 5 — Logistic Regression
+
+```{r}
+set.seed(42)
+ctrl_logistic <- trainControl(method          = "cv",
+                               number          = 5,
+                               classProbs      = TRUE,
+                               summaryFunction = twoClassSummary,
+                               sampling        = "down")   # handle imbalance
+
+logistic_fit <- train(loan_status ~ .,
+                      data      = train_cls,
+                      method    = "glm",
+                      family    = "binomial",
+                      trControl = ctrl_logistic,
+                      metric    = "ROC")
+
+summary(logistic_fit$finalModel)
+```
+
+
+
+
+```{r}
+log_preds  <- predict(logistic_fit, newdata = test_cls)
+log_probs  <- predict(logistic_fit, newdata = test_cls, type = "prob")[, "Repaid"]
+
+cm_logistic <- confusionMatrix(log_preds, test_cls$loan_status, positive = "Repaid")
+print(cm_logistic)
+```
+
+
+
+## Model 6 — KNN (K-Nearest Neighbours)
+
+```{r}
+# Uses standardised data
+set.seed(42)
+ctrl_knn <- trainControl(method          = "cv",
+                          number          = 5,
+                          classProbs      = TRUE,
+                          summaryFunction = twoClassSummary,
+                          sampling        = "down")
+
+knn_grid <- expand.grid(k = c(3, 5, 7, 11, 15, 21))
+
+knn_fit <- train(loan_status ~ .,
+                 data      = train_scaled,
+                 method    = "knn",
+                 trControl = ctrl_knn,
+                 tuneGrid  = knn_grid,
+                 metric    = "ROC")
+
+plot(knn_fit, main = "KNN — Cross-validated ROC vs k")
+cat("Best k:", knn_fit$bestTune$k, "\n")
+```
+
+
+
+
+```{r}
+knn_preds  <- predict(knn_fit, newdata = test_scaled)
+knn_probs  <- predict(knn_fit, newdata = test_scaled, type = "prob")[, "Repaid"]
+
+cm_knn <- confusionMatrix(knn_preds, test_scaled$loan_status, positive = "Repaid")
+print(cm_knn)
+```
+
+
+## Model 7 — LASSO Logistic Regression
+
+```{r}
+X_train_cls <- model.matrix(loan_status ~ ., data = train_scaled)[, -1]
+y_train_cls <- ifelse(train_scaled$loan_status == "Repaid", 1, 0)
+
+X_test_cls  <- model.matrix(loan_status ~ ., data = test_scaled)[, -1]
+y_test_cls  <- ifelse(test_scaled$loan_status  == "Repaid", 1, 0)
+
+set.seed(42)
+cv_lasso_cls <- cv.glmnet(X_train_cls, y_train_cls,
+                           alpha  = 1,
+                           family = "binomial",
+                           nfolds = 10)
+plot(cv_lasso_cls, main = "LASSO Logistic — Cross-validation")
+cat("Best lambda:", round(cv_lasso_cls$lambda.1se, 5), "\n")
+
+# Retained variables
+lasso_cls_coefs <- coef(cv_lasso_cls, s = "lambda.1se")
+cat("Non-zero coefficients:", sum(lasso_cls_coefs[-1] != 0), "\n")
+print(lasso_cls_coefs)
+```
+
+
+
+```{r}
+lasso_cls_probs <- as.vector(
+  predict(cv_lasso_cls, newx = X_test_cls,
+          s = "lambda.1se", type = "response"))
+lasso_cls_preds <- factor(ifelse(lasso_cls_probs >= 0.5,
+                                  "Repaid", "Default"),
+                           levels = c("Default", "Repaid"))
+
+cm_lasso_cls <- confusionMatrix(lasso_cls_preds,
+                                 test_scaled$loan_status,
+                                 positive = "Repaid")
+print(cm_lasso_cls)
+```
+
+
+## Model 8 — Gradient Boosting Machine
+
+```{r}
+
+set.seed(42)
+
+# 1. Standard Control (No changes needed here)
+ctrl_gbm <- trainControl(method          = "cv",
+                         number          = 5,
+                         classProbs      = TRUE,
+                         summaryFunction = twoClassSummary,
+                         sampling        = "down")
+
+# 2. Simpler Grid for GBM
+# GBM uses different parameter names: 
+# interaction.depth (tree depth), n.trees (rounds), shrinkage (eta)
+gbm_grid <- expand.grid(
+  interaction.depth = c(3, 6),
+  n.trees           = c(100, 200),
+  shrinkage         = c(0.05, 0.1),
+  n.minobsinnode    = 10
+)
+
+# 3. Fit the model using "gbm" instead of "xgbTree"
+# This will run without the ALTLIST or verbosity errors.
+gbm_fit <- train(loan_status ~ .,
+                 data      = train_cls,
+                 method    = "gbm",
+                 trControl = ctrl_gbm,
+                 tuneGrid  = gbm_grid,
+                 metric    = "ROC",
+                 verbose   = FALSE) # Standard way to silence GBM
+
+cat("Best GBM parameters:\n")
+print(gbm_fit$bestTune)
+```
+
+
+```{r xgb-preds}
+gbm_preds  <- predict(gbm_fit, newdata = test_cls)
+gbm_probs  <- predict(gbm_fit, newdata = test_cls, type = "prob")[, "Repaid"]
+
+cm_gbm <- confusionMatrix(gbm_preds, test_cls$loan_status, positive = "Repaid")
+print(cm_gbm)
+```
+
+
+## Classification Model Comparison
+
+```{r}
+extract_cls_metrics <- function(cm, probs, actuals, model_name) {
+  roc_obj  <- roc(response  = actuals,
+                  predictor = probs,
+                  levels    = c("Default", "Repaid"),
+                  quiet     = TRUE)
+  data.frame(
+    Model     = model_name,
+    Accuracy  = round(cm$overall["Accuracy"],    3),
+    Kappa     = round(cm$overall["Kappa"],        3),
+    Recall    = round(cm$byClass["Sensitivity"],  3),
+    Precision = round(cm$byClass["Precision"],    3),
+    F1        = round(cm$byClass["F1"],           3),
+    AUC       = round(auc(roc_obj),               3)
+  )
+}
+
+results_cls <- rbind(
+  extract_cls_metrics(cm_logistic,  log_probs,
+                      test_cls$loan_status, "Logistic Regression"),
+  extract_cls_metrics(cm_knn,       knn_probs,
+                      test_scaled$loan_status, "KNN"),
+  extract_cls_metrics(cm_lasso_cls, lasso_cls_probs,
+                      test_scaled$loan_status, "LASSO Logistic"),
+  extract_cls_metrics(cm_gbm,       gbm_probs,
+                      test_cls$loan_status, "Gradient Boosting Machine)")
+
+)
+
+print(results_cls[order(-results_cls$AUC), ],
+      caption = "Classification Model Comparison",
+      row.names = FALSE)
+```
+
+
+
+## ROC Curves — All Classification Models
+
+```{r}
+roc_log   <- roc(test_cls$loan_status,    log_probs,       levels = c("Default","Repaid"), quiet=T)
+roc_knn   <- roc(test_scaled$loan_status, knn_probs,       levels = c("Default","Repaid"), quiet=T)
+roc_lasso <- roc(test_scaled$loan_status, lasso_cls_probs, levels = c("Default","Repaid"), quiet=T)
+roc_gbm   <- roc(test_scaled$loan_status,  gbm_probs,      levels = c("Default","Repaid"), quiet=T)
+
+plot(roc_log,   col = "blue",   lwd = 2, main = "ROC Curves — All Classifiers")
+plot(roc_knn,   col = "green",  lwd = 2, add = TRUE)
+plot(roc_lasso, col = "red",    lwd = 2, add = TRUE)
+plot(roc_gbm,   col = "purple", lwd = 2, add = TRUE)
+abline(a = 0, b = 1, lty = 2, col = "grey50")
+
+legend("bottomright",
+       legend = c(
+         paste0("Logistic  AUC=", round(auc(roc_log),   3)),
+         paste0("KNN       AUC=", round(auc(roc_knn),   3)),
+         paste0("LASSO Log AUC=", round(auc(roc_lasso), 3)),
+         paste0("GBM   Log AUC=", round(auc(roc_gbm), 3))
+       ),
+       col = c("blue","green","red","purple"),
+       lwd = 2, cex = 0.8)
+```
+
+
+
+### Final Classification Model Selection
+
+```{r}
+best_cls_name <- results_cls$Model[which.max(results_cls$AUC)]
+cat("=== Selected Classification Model:", best_cls_name, "===\n\n")
+```
+
+---
+
+
+# Part 3 — Credit Risk Analysis
+
+## Income, Credit Score & Loan Default
+
+```{r}
+df_risk <- df_fe |>
+  mutate(loan_status = factor(df$loan_status,
+                               levels = c(0,1),
+                               labels = c("Default","Repaid")))
+
+# Scatter: credit score vs log income, coloured by loan status
+ggplot(df_risk, aes(x = credit_score, y = log_income,
+                    colour = loan_status, alpha = 0.4)) +
+  geom_point(size = 0.6, show.legend = TRUE) +
+  scale_colour_manual(values = c("Default" = "tomato", "Repaid" = "steelblue")) +
+  guides(alpha = "none") +
+  labs(title = "Credit Score vs Log(Income) by Loan Status",
+       x = "Credit Score", y = "log(Income)", colour = "Loan Status")
+```
+
+
+
+```{r}
+# Distribution of credit score by loan status
+ggplot(df_risk, aes(x = loan_status, y = credit_score, fill = loan_status)) +
+  geom_boxplot(show.legend = FALSE, notch = TRUE) +
+  scale_fill_manual(values = c("Default" = "tomato", "Repaid" = "steelblue")) +
+  labs(title = "Credit Score Distribution by Loan Status",
+       x = "Loan Status", y = "Credit Score")
+```
+
+
+
+```{r}
+ggplot(df_risk, aes(x = loan_status, y = log_income, fill = loan_status)) +
+  geom_boxplot(show.legend = FALSE, notch = TRUE) +
+  scale_fill_manual(values = c("Default" = "tomato", "Repaid" = "steelblue")) +
+  labs(title = "Log(Income) Distribution by Loan Status",
+       x = "Loan Status", y = "log(Income)")
+```
+
+
+
+```{r}
+# Statistical significance
+t_credit <- t.test(credit_score ~ loan_status, data = df_risk)
+t_income <- t.test(log_income   ~ loan_status, data = df_risk)
+
+print(data.frame(
+  Variable  = c("credit_score", "log_income"),
+  Mean_Default = c(
+    round(mean(df_risk$credit_score[df_risk$loan_status == "Default"]), 2),
+    round(mean(df_risk$log_income  [df_risk$loan_status == "Default"]), 2)),
+  Mean_Repaid  = c(
+    round(mean(df_risk$credit_score[df_risk$loan_status == "Repaid"]), 2),
+    round(mean(df_risk$log_income  [df_risk$loan_status == "Repaid"]), 2)),
+  t_statistic = c(round(t_credit$statistic, 3), round(t_income$statistic, 3)),
+  p_value     = c(format.pval(t_credit$p.value, digits=3),
+                  format.pval(t_income$p.value, digits=3))
+), caption = "Welch t-test: Credit Score & Income by Loan Status")
+```
+
+
+
+Findings:
+
+- Both credit score and income are **statistically significantly higher** for borrowers who repaid their loans.
+
+- Borrowers who defaulted tend to have lower credit scores, suggesting credit score is a strong predictor of default risk.
+
+- Income also differs significantly, though the effect size is smaller meaning income alone is not sufficient.
+
+
+## Debt-to-Income as a Risk Signal
+
+```{r}
+ggplot(df_risk, aes(x = loan_status, y = debt_to_income, fill = loan_status)) +
+  geom_boxplot(outliers = FALSE, notch = TRUE, show.legend = FALSE) +
+  scale_fill_manual(values = c("Default" = "tomato", "Repaid" = "steelblue")) +
+  ylim(0, 0.8) +
+  labs(title = "Debt-to-Income Ratio by Loan Status",
+       x = "Loan Status", y = "Debt-to-Income Ratio")
+```
+
+
+
+
+## Variable Importance from Gradient Boosting Machine
+
+```{r}
+# Use the Gradient Boosting Machine model trained earlier
+imp_df <- varImp(gbm_fit)$importance
+imp_df$Variable <- rownames(imp_df)
+
+ggplot(imp_df |> arrange(Overall) |> tail(15),
+       aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 15 Features — GBM Variable Importance",
+       x = "", y = "Importance")
+```
+
+---
+
+
+# Summary & Conclusions
+
+## Regression (Income Prediction)
+
+```{r}
+print(results_reg[order(results_reg$RMSE), ],
+      caption = "Regression Models — Ranked by RMSE",
+      row.names = FALSE)
+```
+
+
+
+- **Transformation applied:** log(income) as the response — confirmed by Box-Cox analysis (λ ≈ 1).
+
+- **Heteroscedasticity correction:** Weighted Least Squares was applied after detecting non-constant variance in residual plots.
+
+- **Model selection:** The model with the lowest RMSE on the held-out test set is chosen as the final model.
+
+- **LASSO** successfully performed automatic variable selection, shrinking irrelevant coefficients to zero.
+
+- **Gradient Descent** converged to a solution consistent with OLS, validating the implementation.
+
+
+
+## Classification (Loan Default Prediction)
+
+```{r}
+print(results_cls[order(-results_cls$AUC), ],
+      caption = "Classification Models — Ranked by AUC",
+      row.names = FALSE)
+```
+
+- **Class imbalance** was handled via down-sampling in cross-validation.
+
+- **LASSO Logistic Regression** provides strong interpretability alongside competitive performance.
+
+- **KNN** is competitive but slower at prediction time.
+
+
+## Credit Risk Key Insights
+
+1. **Credit score** is the single strongest predictor of default — lower scores correspond strongly with default.
+
+2. **Income** is significantly lower among defaulters, but overlaps considerably, limiting its standalone predictive power.
+
+3. **Debt-to-income ratio** and **loan_percent_income** are powerful engineered features that combine income and loan amount into actionable risk signals.
+
+4. **Previous loan defaults** on file is a near-binary separating feature — borrowers with prior defaults are far more likely to default again.
+
+## Standardisation Decision Table
+
+| Feature | Scale-sensitive models | Reason |
+|---|---|---|
+| log_income, log_loan_amnt | Yes | High magnitude; needed for KNN, SVM, LASSO |
+| credit_score | Yes | Range 300–900; needs centering |
+| loan_int_rate, loan_percent_income | Yes | Percentage scale differs from income scale |
+| person_age, person_emp_exp | Yes | Moderate range but needed for distance models |
+| Binary indicators (gender_male, prev_default_bin, etc.) | No | Already 0/1; standardising distorts interpretation |
+| Dummy variables (intent_*, home_*) | No | Sparse binary; standardising makes no difference |
+
+---
+
