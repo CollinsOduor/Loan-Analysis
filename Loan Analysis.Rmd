@@ -17,7 +17,8 @@ required_libraries <- c("dplyr",
                         "caret",
                         "e1071",
                         "pROC",
-                        "plotROC")
+                        "plotROC",
+                        "finalfit")
 
 for (required_library in required_libraries) {
   if(!(required_library %in% installed.packages())) {
@@ -575,6 +576,42 @@ corrplot(correlation_matrix,
 # Feature Engineering
 
 ```{r}
+explanatory = c(
+  "loan_amnt",
+  "loan_percent_income",
+  "loan_int_rate",
+  "loan_status",
+  "credit_score",
+  "cb_person_cred_hist_length",
+  "person_age",
+  "person_emp_exp"
+  )
+dependent = "person_income"
+df %>%
+  summary_factorlist(dependent, explanatory, 
+  p=TRUE, add_dependent_label=TRUE) -> t1
+knitr::kable(t1, align=c("l", "l", "r", "r", "r"))
+```
+
+```{r}
+explanatory = c(
+  "loan_amnt",
+  "loan_percent_income",
+  "loan_int_rate",
+  "person_income",
+  "credit_score",
+  "cb_person_cred_hist_length",
+  "person_age",
+  "person_emp_exp"
+  )
+dependent = "loan_status"
+df %>%
+  finalfit(dependent, explanatory, metrics = T) -> t2
+knitr::kable(t2[[1]], row.names=FALSE, align=c("l", "l", "r", "r", "r", "r"))
+knitr::kable(t2[[2]], row.names=FALSE, col.names="")
+```
+
+```{r}
 df_clean = df |>
   mutate(person_age = Winsorize(person_age, val=c(20, 40))) |>
   mutate(person_emp_exp = Winsorize(person_emp_exp, val = c(0, 45))) |>
@@ -676,6 +713,10 @@ paste0(mae_stepwise_backward)
 ```
 We can choose either model 1 or model 2. They are both parsimonious relative to the full model, but have a similar performance (by RMSE and MAE) and also have the same number of variables.
 
+```{r}
+summary(stepwise_forward)
+```
+
 
 ```{r}
 plot(stepwise_forward)
@@ -695,12 +736,14 @@ logistic_model <- glm(loan_status ~ ., data=train,
 ```{r}
 summary(logistic_model)
 ```
+
 ```{r}
 test$predicted_loan_repayment_probs <- predict(logistic_model, test)
 test <- test |>
   mutate(predicted_loan_repayment = ifelse(predicted_loan_repayment_probs >= 0.5, 1, 0))
 confusionMatrix(as.factor(test$predicted_loan_repayment), as.factor(test$loan_status))
 ```
+
 ```{r}
 ggplot(test, aes(d = loan_status, m = predicted_loan_repayment)) + geom_roc()
 ```
